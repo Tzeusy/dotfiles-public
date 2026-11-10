@@ -6,6 +6,3 @@ alias python=python3
 # Clipboard utilities (requires xclip)
 alias setclip="xclip -selection c"
 alias getclip="xclip -selection c -o"
-
-# Git bare repo for dotfiles management
-alias config='/usr/bin/git --git-dir=$HOME/.cfg/ --work-tree=$HOME'

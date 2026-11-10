@@ -9,7 +9,12 @@
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-dry=0; [ "${1-}" = "--dry-run" ] && dry=1
+dry=0
+case "${1-}" in
+  "") ;;
+  --dry-run) dry=1 ;;
+  *) echo "usage: $0 [--dry-run]" >&2; exit 2 ;;
+esac
 run() { if [ "$dry" = 1 ]; then echo "+ $*"; else "$@"; fi; }
 stamp="$(date +%s)"
 
