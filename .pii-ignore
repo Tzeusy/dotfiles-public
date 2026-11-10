@@ -1,0 +1,2 @@
+# git pathspecs excluded from scripts/check-pii.sh (third-party files with legitimate addresses)
+home_rcs/.tmux/LICENSE.WTFPLv2

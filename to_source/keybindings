@@ -1,0 +1,15 @@
+# Explicit Home/End/Delete bindkeys.
+# .zshrc forces TERM=xterm-256color, but inside tmux (default-terminal
+# screen-256color, xterm-keys on) Home/End arrive as \E[1~ / \E[4~ — which
+# omz's terminfo-based bindings don't cover, so End would self-insert '~'.
+# Bind every common keycode family so these keys work in tmux and bare terms.
+
+bindkey "^[[H"  beginning-of-line   # xterm
+bindkey "^[[F"  end-of-line
+bindkey "^[OH"  beginning-of-line   # xterm application-cursor
+bindkey "^[OF"  end-of-line
+bindkey "^[[1~" beginning-of-line   # screen/tmux, vt
+bindkey "^[[4~" end-of-line
+bindkey "^[[7~" beginning-of-line   # rxvt
+bindkey "^[[8~" end-of-line
+bindkey "^[[3~" delete-char         # Delete (forward)

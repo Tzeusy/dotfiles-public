@@ -1,0 +1,42 @@
+# Kubernetes and Helm aliases
+
+# Base commands
+alias kc='kubecolor'
+alias kns='kc config set-context --current --namespace'
+
+# Namespace shortcuts - system
+alias ksys='kc -n kube-system'
+alias hsys='helm -n kube-system'
+
+# Site-specific namespace shortcuts belong in the private overlay.
+
+# pane_v2-aware kubectl wrappers
+_pane_v2_run() {
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      -i|-t|-it|-ti|--tty|--interactive)
+        "$@"
+        return $?
+        ;;
+    esac
+  done
+
+  if typeset -f pane_v2_log >/dev/null 2>&1; then
+    pane_v2_log "$@"
+  else
+    "$@"
+  fi
+}
+
+k() { _pane_v2_run kubectl "$@"; }
+kgp() { _pane_v2_run kubectl get pods "$@"; }
+kgs() { _pane_v2_run kubectl get svc "$@"; }
+kgd() { _pane_v2_run kubectl get deploy "$@"; }
+kgn() { _pane_v2_run kubectl get nodes "$@"; }
+
+# Kubernetes utility functions
+# Decode all keys in a Kubernetes secret
+ksd() {
+  kubectl get secret "$1" -o json | jq -r '.data | to_entries[] | "\(.key): \(.value | @base64d)"'
+}

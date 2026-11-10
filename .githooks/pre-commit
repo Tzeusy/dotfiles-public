@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Enabled by `git config core.hooksPath .githooks` (homelab Ansible sets it).
+# Submodules point here too, so resolve the guard relative to this hook.
+exec "$(dirname "$(readlink -f "$0")")/../scripts/check-pii.sh"

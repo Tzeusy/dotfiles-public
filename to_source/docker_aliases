@@ -1,0 +1,2 @@
+alias docker_cleanup="docker container prune && docker images -qa -f 'dangling=true' | xargs docker rmi"
+

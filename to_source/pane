@@ -1,0 +1,25 @@
+# https://gist.github.com/kunalb/abfe5757e89ffba1cf3959c9543d9ac0
+# Zsh widget to perform fzf-based completion from every word in your tmux session.
+# Dependencies: Must have tmux, fzf, and ripgrep (rg) installed.
+# Usage: Source in ~/.zshrc, then press Ctrl+U to replace the current word.
+
+function _print_all_panes() {
+  for pane_id in $(tmux list-panes -F '#{pane_id}'); do
+    tmux capture-pane -p -J -S 0 -E - -t "$pane_id" | tr ' ' '\n' | sort -u | rg '[a-zA-Z0-9]+'
+  done
+}
+
+_tmux_pane_words() {
+  local current_word="${LBUFFER##* }"
+  local new_rbuffer="${RBUFFER/#[^ ]##/}"
+  local prompt="${LBUFFER% *} ␣ $new_rbuffer "
+
+  local selected_word=$(_print_all_panes | fzf --query="$current_word" --prompt="$prompt" --height=20 --layout=reverse --no-sort --print-query | tail -n1)
+  local new_lbuffer="${LBUFFER% *} $selected_word"
+  BUFFER="$new_lbuffer$new_rbuffer"
+  CURSOR="${#${new_lbuffer}}"
+
+  zle redisplay
+}
+
+zle -N _tmux_pane_words

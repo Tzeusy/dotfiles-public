@@ -1,0 +1,161 @@
+# zsh-native pane word picker (tmux optional)
+# Ctrl+U opens fzf with words from recent shell history and available terminal backends.
+# Defaults are configurable with:
+#   PANE_V2_HISTORY_LINES       (default: 3000)
+#   PANE_V2_TOKEN_REGEX         (default: [[:alnum:]_./:@-]{2,})
+#   PANE_V2_FZF_OPTS            (optional fzf opts; defaults keep fullscreen to avoid scroll bump)
+#   PANE_V2_SESSION_MAX_LINES   (default: 300)
+#   PANE_V2_OUTPUT_CAPTURE      (default: 1; read output log for candidates)
+#   PANE_V2_OUTPUT_LOG          (default: ${XDG_CACHE_HOME:-$HOME/.cache}/pane_v2/output.log)
+#   PANE_V2_OUTPUT_LOG_LINES    (default: 5000)
+
+typeset -ga PANE_V2_SESSION_LINES
+
+_pane_v2_push_session_line() {
+  local line="$1"
+  [[ -n ${line//[[:space:]]/} ]] || return 0
+
+  PANE_V2_SESSION_LINES+=("$line")
+
+  local max_lines=${PANE_V2_SESSION_MAX_LINES:-300}
+  if (( ${#PANE_V2_SESSION_LINES[@]} > max_lines )); then
+    PANE_V2_SESSION_LINES=("${PANE_V2_SESSION_LINES[@]: -$max_lines}")
+  fi
+}
+
+_pane_v2_session_text() {
+  (( ${#PANE_V2_SESSION_LINES[@]} )) || return 0
+  print -r -l -- "${PANE_V2_SESSION_LINES[@]}"
+}
+
+_pane_v2_output_text() {
+  [[ ${PANE_V2_OUTPUT_CAPTURE:-1} == 1 ]] || return 0
+
+  local log_file=${PANE_V2_OUTPUT_LOG:-${XDG_CACHE_HOME:-$HOME/.cache}/pane_v2/output.log}
+  local lines=${PANE_V2_OUTPUT_LOG_LINES:-5000}
+  [[ -r "$log_file" ]] || return 0
+
+  tail -n "$lines" "$log_file" 2>/dev/null \
+    | sed -E $'s/\x1b\\[[0-9;?]*[ -\\/]*[@-~]//g'
+}
+
+_pane_v2_history_text() {
+  local lines=${PANE_V2_HISTORY_LINES:-3000}
+  fc -ln -"$lines" 2>/dev/null
+}
+
+_pane_v2_tmux_text() {
+  command -v tmux >/dev/null 2>&1 || return 0
+  [[ -n ${TMUX:-} ]] || return 0
+
+  local pane_id
+  while IFS= read -r pane_id; do
+    tmux capture-pane -p -J -S 0 -E - -t "$pane_id" 2>/dev/null
+  done < <(tmux list-panes -a -F '#{pane_id}' 2>/dev/null)
+}
+
+_pane_v2_kitty_text() {
+  command -v kitty >/dev/null 2>&1 || return 0
+  [[ -n ${KITTY_PID:-} ]] || return 0
+
+  kitty @ get-text --extent all 2>/dev/null
+}
+
+_pane_v2_wezterm_text() {
+  command -v wezterm >/dev/null 2>&1 || return 0
+  [[ -n ${WEZTERM_PANE:-} ]] || return 0
+
+  wezterm cli get-text --pane-id "$WEZTERM_PANE" 2>/dev/null
+}
+
+_pane_v2_collect_text() {
+  _pane_v2_session_text
+  _pane_v2_output_text
+  _pane_v2_history_text
+  _pane_v2_tmux_text
+  _pane_v2_kitty_text
+  _pane_v2_wezterm_text
+}
+
+_pane_v2_words() {
+  local token_regex=${PANE_V2_TOKEN_REGEX:-'[[:alnum:]_./:@-]{2,}'}
+
+  _pane_v2_collect_text \
+    | rg --no-filename -o "$token_regex" 2>/dev/null \
+    | awk '!seen[$0]++'
+}
+
+_pane_v2_pick_word() {
+  command -v fzf >/dev/null 2>&1 || {
+    zle -M 'pane_v2: fzf is not installed'
+    return 1
+  }
+
+  command -v rg >/dev/null 2>&1 || {
+    zle -M 'pane_v2: rg is not installed'
+    return 1
+  }
+
+  local left_context=""
+  local current_word="$LBUFFER"
+  if [[ $LBUFFER == *" "* ]]; then
+    left_context="${LBUFFER% *} "
+    current_word="${LBUFFER##* }"
+  fi
+
+  local right_context=""
+  if [[ $RBUFFER == *" "* ]]; then
+    right_context=" ${RBUFFER#* }"
+  fi
+
+  local selection
+  if [[ -n ${PANE_V2_FZF_OPTS:-} ]]; then
+    selection=$(_pane_v2_words | FZF_DEFAULT_OPTS="$PANE_V2_FZF_OPTS" fzf --query="$current_word" --print-query | tail -n1) || {
+      zle redisplay
+      return 0
+    }
+  else
+    selection=$(_pane_v2_words | env -u FZF_DEFAULT_OPTS fzf --query="$current_word" --layout=reverse --prompt='pane_v2> ' --print-query | tail -n1) || {
+      zle redisplay
+      return 0
+    }
+  fi
+
+  [[ -n $selection ]] || {
+    zle redisplay
+    return 0
+  }
+
+  local new_lbuffer="${left_context}${selection}"
+  BUFFER="${new_lbuffer}${right_context}"
+  CURSOR=${#new_lbuffer}
+  zle redisplay
+}
+
+_pane_v2_preexec_hook() {
+  _pane_v2_push_session_line "$1"
+}
+
+_pane_v2_send_break() {
+  _pane_v2_push_session_line "$BUFFER"
+  zle .send-break
+}
+
+pane_v2_log() {
+  local log_file=${PANE_V2_OUTPUT_LOG:-${XDG_CACHE_HOME:-$HOME/.cache}/pane_v2/output.log}
+  local log_dir=${log_file:h}
+  mkdir -p -- "$log_dir" 2>/dev/null || return 1
+  "$@" 2>&1 | tee -a "$log_file"
+}
+
+if [[ -o interactive ]]; then
+  autoload -Uz add-zsh-hook
+
+  if (( ${preexec_functions[(I)_pane_v2_preexec_hook]} == 0 )); then
+    add-zsh-hook preexec _pane_v2_preexec_hook
+  fi
+
+  zle -N send-break _pane_v2_send_break
+  zle -N _pane_v2_pick_word
+  bindkey '^U' _pane_v2_pick_word
+fi

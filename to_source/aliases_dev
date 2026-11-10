@@ -1,0 +1,16 @@
+# Development workflow aliases
+
+# Project setup and environment
+alias mcd='make clean env && actv'
+alias mfc='make clean-db'
+alias mfmt='make format'
+
+# Logging
+alias log='cd /var/log/k8'
+
+# Environment loading
+alias devenv='env $(cat dev.env)'
+alias prodenv='env $(cat prod.env)'
+
+# Python virtual environment activation
+alias eba="source .venv/bin/activate"

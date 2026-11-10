@@ -1,0 +1,146 @@
+# Git submodule workflow functions
+
+# gsub-sync: Commit dirty submodule changes and update parent refs
+#
+# For each submodule with modified content:
+#   1. Shows the diff
+#   2. Commits changes inside the submodule
+#   3. Optionally pushes to remote
+#   4. Stages the updated ref in the parent repo
+#
+# Usage:
+#   gsub-sync                    # Interactive mode
+#   gsub-sync -m "message"       # Batch mode: same commit message for all
+#   gsub-sync --dry-run          # Preview without making changes
+#   gsub-sync --push             # Also push each submodule after committing
+gsub-sync() {
+  local msg="" dry_run=0 do_push=0
+  local -a dirty_paths=()
+  local -a committed_paths=()
+  local root full short branch commit_msg temp_branch remote_branch
+
+  root="$(git rev-parse --show-toplevel 2>/dev/null)" || {
+    echo "error: not in a git repository" >&2
+    return 1
+  }
+
+  # Parse flags
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -m|--message)  msg="$2"; shift 2 ;;
+      --dry-run)     dry_run=1; shift ;;
+      --push)        do_push=1; shift ;;
+      -h|--help)
+        echo "Usage: gsub-sync [-m <message>] [--dry-run] [--push]"
+        echo ""
+        echo "  -m, --message   Commit message for all dirty submodules (batch mode)"
+        echo "  --dry-run       Show what would happen without making changes"
+        echo "  --push          Push each submodule after committing"
+        echo ""
+        echo "Without -m, prompts for a commit message per submodule (interactive)."
+        return 0
+        ;;
+      *) echo "Unknown option: $1" >&2; return 1 ;;
+    esac
+  done
+
+  # Collect submodule paths from .gitmodules (avoids orphaned entries)
+  local -a sub_paths=()
+  while IFS= read -r line; do
+    sub_paths+=("${line##* }")
+  done < <(git -C "$root" config -f .gitmodules --get-regexp '^submodule\..*\.path$' 2>/dev/null)
+
+  if [[ ${#sub_paths[@]} -eq 0 ]]; then
+    echo "No submodules found in .gitmodules"
+    return 0
+  fi
+
+  # Find dirty submodules
+  for sp in "${sub_paths[@]}"; do
+    full="$root/$sp"
+    [[ -d "$full/.git" || -f "$full/.git" ]] || continue
+    if [[ -n "$(git -C "$full" status --porcelain 2>/dev/null)" ]]; then
+      dirty_paths+=("$sp")
+    fi
+  done
+
+  if [[ ${#dirty_paths[@]} -eq 0 ]]; then
+    echo "All submodules are clean."
+    return 0
+  fi
+
+  echo "Found ${#dirty_paths[@]} dirty submodule(s):"
+  printf "  %s\n" "${dirty_paths[@]}"
+  echo ""
+
+  # Process each dirty submodule
+  for sp in "${dirty_paths[@]}"; do
+    full="$root/$sp"
+    short="${sp##*/}"
+
+    echo "━━━ $sp ━━━"
+
+    # Show branch/HEAD state
+    branch="$(git -C "$full" symbolic-ref --short HEAD 2>/dev/null)" || branch="(detached HEAD)"
+    echo "  Branch: $branch"
+
+    # Show diff summary
+    git -C "$full" diff --stat
+    echo ""
+
+    if [[ $dry_run -eq 1 ]]; then
+      echo "  [dry-run] Would commit and stage ref update"
+      echo ""
+      continue
+    fi
+
+    # Determine commit message
+    commit_msg="$msg"
+    if [[ -z "$commit_msg" ]]; then
+      echo -n "  Commit message for $short: "
+      read -r commit_msg
+      if [[ -z "$commit_msg" ]]; then
+        echo "  Skipped (no message provided)"
+        echo ""
+        continue
+      fi
+    fi
+
+    # Handle detached HEAD: create a temp branch
+    if [[ "$branch" == "(detached HEAD)" ]]; then
+      temp_branch="local/$(date +%Y%m%d)-sync"
+      echo "  Detached HEAD — creating branch '$temp_branch'"
+      git -C "$full" checkout -b "$temp_branch"
+      branch="$temp_branch"
+    fi
+
+    # Commit inside submodule
+    git -C "$full" add -A
+    git -C "$full" commit -m "$commit_msg"
+
+    # Push if requested and remote tracking exists
+    if [[ $do_push -eq 1 ]]; then
+      remote_branch="$(git -C "$full" rev-parse --abbrev-ref '@{upstream}' 2>/dev/null)" || true
+      if [[ -n "$remote_branch" ]]; then
+        echo "  Pushing to ${remote_branch}..."
+        git -C "$full" push
+      else
+        echo "  No upstream tracking branch — skipping push"
+      fi
+    fi
+
+    committed_paths+=("$sp")
+    echo ""
+  done
+
+  # Stage updated refs in parent
+  if [[ ${#committed_paths[@]} -gt 0 && $dry_run -eq 0 ]]; then
+    echo "━━━ Parent repo ━━━"
+    git -C "$root" add "${committed_paths[@]}"
+    echo "Staged ${#committed_paths[@]} submodule ref(s):"
+    printf "  %s\n" "${committed_paths[@]}"
+    echo ""
+    echo "Run 'git commit' in the parent to finalize, e.g.:"
+    echo "  git commit -m \"Update submodule refs: ${committed_paths[*]##*/}\""
+  fi
+}

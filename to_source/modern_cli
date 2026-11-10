@@ -1,0 +1,50 @@
+# Modern CLI tool wiring (zoxide, atuin, eza, bat, fd, fzf, lazygit, yazi).
+# Every block is guarded so this file is safe on machines missing a tool.
+
+# GitHub-release binaries land here on Ubuntu
+[[ ":$PATH:" == *":$HOME/.local/bin:"* ]] || export PATH="$HOME/.local/bin:$PATH"
+
+# Ubuntu packages ship renamed binaries
+command -v batcat >/dev/null && ! command -v bat >/dev/null && alias bat='batcat'
+command -v fdfind >/dev/null && ! command -v fd  >/dev/null && alias fd='fdfind'
+
+# zoxide: smarter cd (replaces the oh-my-zsh `z` plugin; same `z` muscle memory, plus `zi` for interactive fzf picking)
+command -v zoxide >/dev/null && eval "$(zoxide init zsh)"
+
+# atuin: shell history database — rebinds Ctrl-R to full-text history search.
+# Up-arrow stays native; pane_v2's Ctrl-U token picker is unaffected.
+command -v atuin >/dev/null && eval "$(atuin init zsh --disable-up-arrow)"
+
+# eza: modern ls (native ls left untouched for script safety)
+if command -v eza >/dev/null; then
+  alias ll='eza -l --group --git'
+  alias la='eza -la --group --git'
+  alias lt='eza --tree --level=2'
+fi
+
+# bat as man-page colorizer
+if command -v bat >/dev/null || command -v batcat >/dev/null; then
+  export MANPAGER="sh -c 'col -bx | ${commands[bat]:-batcat} -l man -p'"
+fi
+
+# fzf uses fd: faster, honors .gitignore, includes hidden files
+if command -v fd >/dev/null || command -v fdfind >/dev/null; then
+  export FZF_DEFAULT_COMMAND="${commands[fd]:-fdfind} --type f --hidden --exclude .git"
+  export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
+fi
+
+# lazygit
+command -v lazygit >/dev/null && alias lg='lazygit'
+
+# yazi: `y` opens the file manager and cd's to wherever you quit (official wrapper)
+if command -v yazi >/dev/null; then
+  function y() {
+    local tmp cwd
+    tmp="$(mktemp -t yazi-cwd.XXXXXX)"
+    yazi "$@" --cwd-file="$tmp"
+    if cwd="$(command cat -- "$tmp")" && [ -n "$cwd" ] && [ "$cwd" != "$PWD" ]; then
+      builtin cd -- "$cwd"
+    fi
+    rm -f -- "$tmp"
+  }
+fi
