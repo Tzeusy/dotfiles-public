@@ -33,3 +33,8 @@ lazygit, yazi, kubecolor, delta, gh.
 
 Put hostnames, tokens, site-specific aliases and PATH entries there. Git identity goes in
 `~/.gitconfig.local`, which `.gitconfig` includes last.
+
+## License
+
+MIT (see `LICENSE`), except `home_rcs/.tmux/`, vendored from
+[gpakosz/.tmux](https://github.com/gpakosz/.tmux) under its own WTFPLv2/MIT dual license.
