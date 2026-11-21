@@ -22,7 +22,7 @@ lazygit, yazi, kubecolor, delta, gh.
 | `home_rcs/` | Dotfiles symlinked into `~` (`.zshrc`, `.tmux.conf*`, `.vimrc`, `.gitconfig`, ...) |
 | `to_source/` | Snippets sourced by `.zshrc` (aliases, keybindings, Ctrl-U pane word picker, ...) |
 | `useful_scripts/` | Standalone helpers (`ts` = fzf tmux session switcher) |
-| `scripts/check-pii.sh` | Pre-commit guard against emails, tailnet hosts, private IPs |
+| `scripts/check-pii.sh` | Pre-commit guard against emails, tailnet hosts, private IPs (RFC 2606 placeholder emails allowed; `scripts/check-pii-test.sh` self-tests it) |
 
 ## Overlay
 

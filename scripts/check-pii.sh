@@ -3,6 +3,7 @@
 #
 #   scripts/check-pii.sh            # staged changes (what the pre-commit hook runs)
 #   scripts/check-pii.sh --all      # every tracked file (audit)
+#   scripts/check-pii-test.sh       # self-test against throwaway repos
 #
 # Generic patterns (emails, tailnet hostnames, private/CGNAT IPv4) are built in.
 # Literal personal values (real tailnet name, email, hostnames) belong in a
@@ -42,8 +43,11 @@ declare -A patterns=(
   [private-ipv4]='(^|[^0-9.])(10\.[0-9]{1,3}|192\.168|172\.(1[6-9]|2[0-9]|3[01]))\.[0-9]{1,3}\.[0-9]{1,3}([^0-9]|$)'
   [cgnat-ipv4]='(^|[^0-9.])100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.[0-9]{1,3}\.[0-9]{1,3}([^0-9]|$)'
 )
-# Addresses that identify nobody.
-allow='noreply@|@example\.(com|org|net)|git@github\.com|@users\.noreply\.github\.com'
+# Addresses that identify nobody: no-reply senders, GitHub's own, and RFC 2606
+# reserved names (example.com/.net/.org and the .example/.invalid/.localhost/
+# .test TLDs). Checked per match, so a placeholder never excuses a real address
+# on the same line.
+allow='^(noreply@.*|git@github\.com|.*@users\.noreply\.github\.com|.*@([A-Za-z0-9-]+\.)*(example\.(com|org|net)|example|invalid|localhost|test))$'
 
 found=0
 report() {  # stdin: git grep -n output "file:line:text"; prints location only
@@ -53,9 +57,19 @@ report() {  # stdin: git grep -n output "file:line:text"; prints location only
   done
 }
 
+allowed() {  # stdin: git grep -n -o output "file:line:match"; drops allowed emails
+  while IFS= read -r hit; do
+    [[ "${hit#*:*:}" =~ $allow ]] || printf '%s\n' "$hit"
+  done
+}
+
 for name in "${!patterns[@]}"; do
-  report "$name" < <(git grep "${scope[@]}" -I -n -E -e "${patterns[$name]}" -- "${pathspec[@]}" \
-    | grep -vE -- "$allow" || true)
+  if [ "$name" = email ]; then
+    report "$name" < <(git grep "${scope[@]}" -I -n -o -E -e "${patterns[$name]}" -- "${pathspec[@]}" \
+      | allowed || true)
+  else
+    report "$name" < <(git grep "${scope[@]}" -I -n -E -e "${patterns[$name]}" -- "${pathspec[@]}" || true)
+  fi
 done
 if [ -r "$denylist" ]; then
   while IFS= read -r literal; do
